@@ -1,0 +1,31 @@
+# first create a user, updating $user for your environment:
+if [ ! -d "auth" ]; then
+  mkdir -p auth
+fi
+touch auth/htpasswd
+chmod 666 auth/htpasswd
+docker run --rm -it \
+  -v `pwd`/auth:/auth \
+  --entrypoint htpasswd registry:2 -B /auth/htpasswd $USER
+chmod 444 auth/htpasswd
+
+# then spin up the registry service listening on port 5000
+docker run -d -p 5000:5000 --restart=always \
+  -v `pwd`/auth/htpasswd:/auth/htpasswd:ro \
+  -v `pwd`/registry:/var/lib/registry \
+  -e "REGISTRY_AUTH=htpasswd" \
+  -e "REGISTRY_AUTH_HTPASSWD_REALM=Local Registry" \
+  -e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" \
+  -e "REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/var/lib/registry" \
+  registry:2
+
+# then push your image
+docker login localhost:5000
+docker tag my-customized-image localhost:5000/my-customized-image
+docker push localhost:5000/my-customized-image
+
+# then spin up the service with the new image name
+# replace registryhost with ip/hostname of your registry Docker host
+docker service create --name custom --network my-network \
+  --constraint node.labels.myconstraint==true --with-registry-auth \
+  registryhost:5000/my-customized-image
